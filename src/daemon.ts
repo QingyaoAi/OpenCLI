@@ -28,6 +28,7 @@ import { log } from './logger.js';
 import { PKG_VERSION } from './version.js';
 import { DEFAULT_CONTEXT_ID } from './browser/profile.js';
 import { recordExtensionVersion } from './update-check.js';
+import { launchFormFillAgent } from './agent-launcher.js';
 import {
   PROFILE_DISCONNECTED_HINT,
   buildCommandDispatchFailure,
@@ -557,6 +558,21 @@ wss.on('connection', (ws: WebSocket) => {
       // Application-level keepalive from the extension — WS traffic is what
       // keeps the MV3 service worker alive; nothing to do here.
       if (msg.type === 'ping') return;
+
+      // Extension-initiated: user clicked "Fill this page" in the popup.
+      // Fire-and-forget — the extension already bound the session before
+      // sending this, so there is no result to route back.
+      if (msg.type === 'launch-agent') {
+        const session = typeof msg.session === 'string' ? msg.session : null;
+        if (session) {
+          const url = typeof msg.url === 'string' ? msg.url : '';
+          const contextId = typeof msg.contextId === 'string' ? msg.contextId : undefined;
+          launchFormFillAgent(session, url, contextId).catch((err) => {
+            log.warn(`[daemon] Failed to launch form-fill agent: ${err instanceof Error ? err.message : String(err)}`);
+          });
+        }
+        return;
+      }
 
       // Handle command results
       const p = pending.get(msg.id);

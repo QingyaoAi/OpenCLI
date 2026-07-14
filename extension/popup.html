@@ -115,6 +115,32 @@
     }
     .footer a { color: #007aff; text-decoration: none; }
     .footer a:hover { text-decoration: underline; }
+    .fill-btn {
+      display: block;
+      width: 100%;
+      margin-top: 10px;
+      padding: 9px 12px;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: inherit;
+      color: #fff;
+      background: #007aff;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.12s;
+    }
+    .fill-btn:hover:not(:disabled) { background: #0066d6; }
+    .fill-btn:disabled { background: #d2d2d7; cursor: default; }
+    .fill-status {
+      margin-top: 8px;
+      font-size: 11px;
+      color: #6e6e73;
+      text-align: center;
+      min-height: 14px;
+    }
+    .fill-status.error { color: #ff3b30; }
+    .fill-status.success { color: #34c759; }
   </style>
 </head>
 <body>
@@ -138,6 +164,8 @@
       The extension connects automatically when you run any <code>opencli</code> command.
     </div>
   </div>
+  <button type="button" class="fill-btn" id="fillBtn" disabled>Fill this page with Claude Code</button>
+  <div class="fill-status" id="fillStatus"></div>
   <div class="footer">
     <a href="https://github.com/jackwener/opencli" target="_blank">Documentation</a>
   </div>

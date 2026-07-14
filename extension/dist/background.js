@@ -1654,6 +1654,33 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     })();
     return true;
   }
+  if (msg?.type === "activateFormFill") {
+    void (async () => {
+      if (!isDaemonSocketActive(ws)) {
+        sendResponse({ ok: false, error: "Not connected to the OpenCLI daemon" });
+        return;
+      }
+      const session = `formfill-${crypto.randomUUID().slice(0, 8)}`;
+      const leaseKey = getLeaseKey(session, "browser");
+      const bindResult = await handleBind(
+        { id: `popup-bind-${Date.now()}`},
+        leaseKey
+      );
+      if (!bindResult.ok) {
+        sendResponse({ ok: false, error: bindResult.error || "Could not bind the current tab" });
+        return;
+      }
+      const url = bindResult.data?.url ?? "";
+      const contextId = await getCurrentContextId();
+      const sent = safeSend(ws, { type: "launch-agent", session, url, contextId });
+      if (!sent) {
+        sendResponse({ ok: false, error: "Failed to notify the OpenCLI daemon" });
+        return;
+      }
+      sendResponse({ ok: true, session });
+    })();
+    return true;
+  }
   return false;
 });
 async function fetchDaemonVersion() {
