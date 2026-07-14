@@ -44,10 +44,18 @@ export async function launchFormFillAgent(session: string, url: string, contextI
 
   writeFileSync(join(workspaceDir, 'TASK.md'), buildFormFillTask(session, url, contextId), 'utf-8');
 
+  // Pre-authorize the tools this agent actually needs so the form-fill flow
+  // isn't interrupted by permission prompts: opencli against the bound tab,
+  // and the read-only InfoGrep MCP search the agent uses to dig the user's
+  // details (name, address, IDs, …) out of their local files. Passed as CLI
+  // flags rather than a workspace .claude/settings.json — Claude Code ignores
+  // settings-file allowlists in folders that never got a trust-dialog accept,
+  // which a freshly generated workspace never has. Deliberately scoped — not
+  // --dangerously-skip-permissions — so anything beyond these still asks.
   const scriptPath = join(workspaceDir, 'start.sh');
   writeFileSync(
     scriptPath,
-    `#!/bin/bash\ncd "${workspaceDir}"\nclaude "Read TASK.md in this directory and follow its instructions to help me fill out the form on the page it describes."\n`,
+    `#!/bin/bash\ncd "${workspaceDir}"\nclaude "Read TASK.md in this directory and follow its instructions to help me fill out the form on the page it describes." --permission-mode acceptEdits --allowedTools "Bash(opencli:*),mcp__infogrep"\n`,
     'utf-8',
   );
   chmodSync(scriptPath, 0o755);

@@ -1655,34 +1655,57 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true;
   }
   if (msg?.type === "activateFormFill") {
+    console.log(`[opencli] activateFormFill received (daemon socket active: ${isDaemonSocketActive(ws)})`);
+    if (!isDaemonSocketActive(ws)) {
+      sendResponse({ ok: false, error: "Not connected to the OpenCLI daemon" });
+      return false;
+    }
+    sendResponse({ ok: true, pending: true });
+    console.log("[opencli] activateFormFill acknowledged, starting bind");
     void (async () => {
-      if (!isDaemonSocketActive(ws)) {
-        sendResponse({ ok: false, error: "Not connected to the OpenCLI daemon" });
-        return;
+      try {
+        const session = `formfill-${crypto.randomUUID().slice(0, 8)}`;
+        const leaseKey = getLeaseKey(session, "browser");
+        const bindResult = await handleBind(
+          { id: `popup-bind-${Date.now()}`, action: "bind", session, surface: "browser" },
+          leaseKey
+        );
+        console.log(`[opencli] activateFormFill bind result: ok=${bindResult.ok} error=${bindResult.error ?? ""}`);
+        if (!bindResult.ok) {
+          notifyFormFillResult(false, bindResult.error || "Could not bind the current tab");
+          return;
+        }
+        const url = bindResult.data?.url ?? "";
+        const contextId = await getCurrentContextId();
+        const sent = safeSend(ws, { type: "launch-agent", session, url, contextId });
+        console.log(`[opencli] activateFormFill launch-agent sent: ${sent} (session=${session})`);
+        if (!sent) {
+          notifyFormFillResult(false, "Failed to notify the OpenCLI daemon");
+          return;
+        }
+        notifyFormFillResult(true, "Claude Code agent launched in a new Terminal window.");
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`[opencli] activateFormFill failed: ${message}`);
+        notifyFormFillResult(false, message);
       }
-      const session = `formfill-${crypto.randomUUID().slice(0, 8)}`;
-      const leaseKey = getLeaseKey(session, "browser");
-      const bindResult = await handleBind(
-        { id: `popup-bind-${Date.now()}`},
-        leaseKey
-      );
-      if (!bindResult.ok) {
-        sendResponse({ ok: false, error: bindResult.error || "Could not bind the current tab" });
-        return;
-      }
-      const url = bindResult.data?.url ?? "";
-      const contextId = await getCurrentContextId();
-      const sent = safeSend(ws, { type: "launch-agent", session, url, contextId });
-      if (!sent) {
-        sendResponse({ ok: false, error: "Failed to notify the OpenCLI daemon" });
-        return;
-      }
-      sendResponse({ ok: true, session });
     })();
     return true;
   }
   return false;
 });
+function notifyFormFillResult(success, message) {
+  try {
+    chrome.notifications.create({
+      type: "basic",
+      iconUrl: "icons/icon-128.png",
+      title: success ? "OpenCLI: agent launched" : "OpenCLI: could not start agent",
+      message
+    });
+  } catch (err) {
+    console.error(`[opencli] Failed to show form-fill notification: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
 async function fetchDaemonVersion() {
   try {
     const res = await fetch(`http://${DAEMON_HOST}:${DAEMON_PORT}/status`, {

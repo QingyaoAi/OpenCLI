@@ -61,17 +61,25 @@ document.getElementById('fillBtn').addEventListener('click', () => {
   const fillStatus = document.getElementById('fillStatus');
   fillBtn.disabled = true;
   fillStatus.className = 'fill-status';
-  fillStatus.textContent = 'Starting Claude Code agent…';
+  fillStatus.textContent = 'Requesting…';
 
+  // This only confirms the request was accepted (daemon reachable, etc.) —
+  // the actual bind + Terminal launch happens in the background independent
+  // of whether this popup is still open, and reports via a notification.
   chrome.runtime.sendMessage({ type: 'activateFormFill' }, (resp) => {
-    if (chrome.runtime.lastError || !resp || !resp.ok) {
+    if (chrome.runtime.lastError) {
+      console.error('[opencli popup] sendMessage lastError:', chrome.runtime.lastError.message);
+    }
+    if (!resp || !resp.ok) {
       fillStatus.className = 'fill-status error';
-      fillStatus.textContent = (resp && resp.error) || 'Failed to start agent';
+      fillStatus.textContent = (chrome.runtime.lastError && chrome.runtime.lastError.message)
+        || (resp && resp.error)
+        || 'Failed to start agent';
       fillBtn.disabled = false;
       return;
     }
     fillStatus.className = 'fill-status success';
-    fillStatus.textContent = 'Agent launched in Terminal';
+    fillStatus.textContent = 'Requested — watch for a notification and a new Terminal window.';
     setTimeout(() => { fillBtn.disabled = false; }, 3000);
   });
 });
