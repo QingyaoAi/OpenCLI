@@ -2993,6 +2993,40 @@
     "sourceFile": "autohome/score.js"
   },
   {
+    "site": "baidu",
+    "name": "search",
+    "description": "Search Baidu",
+    "access": "read",
+    "domain": "www.baidu.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "query",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Search query"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Max results (max 25)"
+      }
+    ],
+    "columns": [
+      "title",
+      "snippet",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "baidu/search.js",
+    "sourceFile": "baidu/search.js",
+    "navigateBefore": "https://www.baidu.com"
+  },
+  {
     "site": "baidu-scholar",
     "name": "search",
     "description": "百度学术搜索",
@@ -4586,6 +4620,40 @@
     "type": "js",
     "modulePath": "binance/trades.js",
     "sourceFile": "binance/trades.js"
+  },
+  {
+    "site": "bing",
+    "name": "search",
+    "description": "Search Bing",
+    "access": "read",
+    "domain": "www.bing.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "query",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Search query"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Max results (max 25)"
+      }
+    ],
+    "columns": [
+      "title",
+      "snippet",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "bing/search.js",
+    "sourceFile": "bing/search.js",
+    "navigateBefore": "https://www.bing.com"
   },
   {
     "site": "bloomberg",
@@ -11394,6 +11462,39 @@
   },
   {
     "site": "doubao",
+    "name": "chat",
+    "description": "Chat with Doubao AI",
+    "access": "write",
+    "domain": "www.doubao.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "message",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Message to send to Doubao AI"
+      },
+      {
+        "name": "timeout",
+        "type": "int",
+        "default": 60,
+        "required": false,
+        "help": "Timeout in seconds for response (default: 60)"
+      }
+    ],
+    "columns": [
+      "response"
+    ],
+    "type": "js",
+    "modulePath": "doubao/chat.js",
+    "sourceFile": "doubao/chat.js",
+    "navigateBefore": false,
+    "siteSession": "persistent"
+  },
+  {
+    "site": "doubao",
     "name": "detail",
     "description": "Read a specific Doubao conversation by ID",
     "access": "read",
@@ -13114,6 +13215,224 @@
     "type": "js",
     "modulePath": "eastmoney/sectors.js",
     "sourceFile": "eastmoney/sectors.js"
+  },
+  {
+    "site": "easychair",
+    "name": "assign",
+    "description": "Assign or unassign a reviewer (PC member) to a submission on EasyChair",
+    "access": "write",
+    "domain": "easychair.org",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "submission",
+        "type": "str",
+        "required": true,
+        "help": "Internal submission id (submission=<id>)"
+      },
+      {
+        "name": "member",
+        "type": "str",
+        "required": true,
+        "help": "Numeric PC member id"
+      },
+      {
+        "name": "action",
+        "type": "str",
+        "default": "add",
+        "required": false,
+        "help": "add (default) | remove"
+      },
+      {
+        "name": "conf",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "Conference: numeric a= id or acronym/slug. Defaults to $EASYCHAIR_CONF."
+      }
+    ],
+    "columns": [
+      "submission",
+      "member",
+      "reviewer",
+      "action",
+      "result"
+    ],
+    "type": "js",
+    "modulePath": "easychair/assign.js",
+    "sourceFile": "easychair/assign.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "easychair",
+    "name": "conferences",
+    "description": "List EasyChair conferences your account is involved in (acronym + slug)",
+    "access": "read",
+    "domain": "easychair.org",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "keyword",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "Filter by acronym or name (substring, case-insensitive)"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 200,
+        "required": false,
+        "help": "Max rows"
+      }
+    ],
+    "columns": [
+      "num",
+      "acronym",
+      "slug",
+      "name"
+    ],
+    "type": "js",
+    "modulePath": "easychair/conferences.js",
+    "sourceFile": "easychair/conferences.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "easychair",
+    "name": "members",
+    "description": "List EasyChair PC members with assigned/completed/missing review counts",
+    "access": "read",
+    "domain": "easychair.org",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "conf",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "Conference: numeric a= id or acronym/slug. Defaults to $EASYCHAIR_CONF."
+      },
+      {
+        "name": "filter",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "all (default) | incomplete | notstarted | idle | done"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 500,
+        "required": false,
+        "help": "Max rows"
+      }
+    ],
+    "columns": [
+      "name",
+      "role",
+      "assigned",
+      "reviews",
+      "missing",
+      "pct",
+      "status"
+    ],
+    "type": "js",
+    "modulePath": "easychair/members.js",
+    "sourceFile": "easychair/members.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "easychair",
+    "name": "missing",
+    "description": "List EasyChair reviewers with outstanding reviews (with member ids + last login)",
+    "access": "read",
+    "domain": "easychair.org",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "conf",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "Conference: numeric a= id or acronym/slug. Defaults to $EASYCHAIR_CONF."
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 500,
+        "required": false,
+        "help": "Max rows"
+      }
+    ],
+    "columns": [
+      "name",
+      "memberId",
+      "lastLogin",
+      "missing",
+      "urgency",
+      "subs"
+    ],
+    "type": "js",
+    "modulePath": "easychair/missing.js",
+    "sourceFile": "easychair/missing.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "easychair",
+    "name": "submissions",
+    "description": "List EasyChair submissions with assigned/received review counts and scores",
+    "access": "read",
+    "domain": "easychair.org",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "conf",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "Conference: numeric a= id or acronym/slug. Defaults to $EASYCHAIR_CONF."
+      },
+      {
+        "name": "filter",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "all (default) | incomplete | notstarted"
+      },
+      {
+        "name": "required",
+        "type": "int",
+        "default": 3,
+        "required": false,
+        "help": "Target reviews per paper (default 3)"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 500,
+        "required": false,
+        "help": "Max rows"
+      }
+    ],
+    "columns": [
+      "num",
+      "assigned",
+      "reviews",
+      "missing",
+      "avg",
+      "scores",
+      "status",
+      "title"
+    ],
+    "type": "js",
+    "modulePath": "easychair/submissions.js",
+    "sourceFile": "easychair/submissions.js",
+    "navigateBefore": false
   },
   {
     "site": "endoflife",
@@ -14865,7 +15184,7 @@
   {
     "site": "google-scholar",
     "name": "search",
-    "description": "Google Scholar 学术搜索",
+    "description": "Search Google Scholar for academic papers",
     "access": "read",
     "domain": "scholar.google.com",
     "strategy": "public",
@@ -14876,21 +15195,20 @@
         "type": "str",
         "required": true,
         "positional": true,
-        "help": "搜索关键词"
+        "help": "Paper title or search query"
       },
       {
         "name": "limit",
         "type": "int",
         "default": 10,
         "required": false,
-        "help": "返回结果数量 (max 20)"
+        "help": "Max results (max 25)"
       }
     ],
     "columns": [
       "rank",
       "title",
       "authors",
-      "source",
       "year",
       "cited",
       "url"
@@ -32834,6 +33152,40 @@
     "navigateBefore": "https://www.smzdm.com"
   },
   {
+    "site": "sogou",
+    "name": "search",
+    "description": "Search Sogou",
+    "access": "read",
+    "domain": "www.sogou.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "query",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Search query"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Max results (max 25)"
+      }
+    ],
+    "columns": [
+      "title",
+      "snippet",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "sogou/search.js",
+    "sourceFile": "sogou/search.js",
+    "navigateBefore": "https://www.sogou.com"
+  },
+  {
     "site": "spotify",
     "name": "auth",
     "description": "Authenticate with Spotify (OAuth — run once)",
@@ -39522,6 +39874,79 @@
     "sourceFile": "weibo/auth.js",
     "navigateBefore": false,
     "siteSession": "persistent"
+  },
+  {
+    "site": "weixin",
+    "name": "articles",
+    "description": "获取指定公众号的最新文章列表（通过微信网页版阅读功能）",
+    "access": "read",
+    "domain": "wx2.qq.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "name",
+        "type": "str",
+        "required": true,
+        "help": "公众号名称，如\"科奖中心\""
+      },
+      {
+        "name": "limit",
+        "type": "str",
+        "default": "20",
+        "required": false,
+        "help": "最多返回文章数（默认20）"
+      }
+    ],
+    "columns": [
+      "Title",
+      "PublishDate",
+      "Url",
+      "Digest"
+    ],
+    "type": "js",
+    "modulePath": "weixin/articles.js",
+    "sourceFile": "weixin/articles.js",
+    "navigateBefore": false
+  },
+  {
+    "site": "weixin",
+    "name": "contacts",
+    "description": "获取微信所有联系人及备注信息",
+    "access": "read",
+    "domain": "wx2.qq.com",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "type",
+        "type": "str",
+        "default": "all",
+        "required": false,
+        "help": "联系人类型: all/friend/group/star"
+      },
+      {
+        "name": "keyword",
+        "type": "str",
+        "default": "",
+        "required": false,
+        "help": "按昵称或备注名搜索过滤"
+      }
+    ],
+    "columns": [
+      "DisplayName",
+      "NickName",
+      "RemarkName",
+      "Type",
+      "Sex",
+      "StarFriend",
+      "Signature",
+      "MemberCount"
+    ],
+    "type": "js",
+    "modulePath": "weixin/contacts.js",
+    "sourceFile": "weixin/contacts.js",
+    "navigateBefore": false
   },
   {
     "site": "weixin",

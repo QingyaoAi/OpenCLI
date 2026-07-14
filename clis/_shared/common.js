@@ -30,3 +30,15 @@ export function requireNonEmptyQuery(value, label = 'query') {
     }
     return normalized;
 }
+/**
+ * page.evaluate() can resolve to either the raw value returned by the
+ * evaluated script, or a `{ session, data }` envelope (seen on some
+ * adapter-surface executions) — see clis/douyin/_shared/evaluate-result.js
+ * for the same normalization used elsewhere in this codebase.
+ */
+export function unwrapEvaluateResult(payload) {
+    if (payload && !Array.isArray(payload) && typeof payload === 'object' && 'session' in payload && 'data' in payload) {
+        return payload.data;
+    }
+    return payload;
+}

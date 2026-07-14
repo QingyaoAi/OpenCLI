@@ -1,4 +1,5 @@
 import { CommandExecutionError } from '@jackwener/opencli/errors';
+import { unwrapEvaluateResult } from '../_shared/common.js';
 
 export const DOUBAO_DOMAIN = 'www.doubao.com';
 export const DOUBAO_CHAT_URL = 'https://www.doubao.com/chat';
@@ -52,6 +53,10 @@ function getTranscriptLinesScript() {
         '[data-testid="flow_chat_sidebar"]',
         '[data-testid="chat_input"]',
         '[data-testid="flow_chat_guidance_page"]',
+        // Current layout (2026+) moved the sidebar off data-testid onto a
+        // plain id, plus a Tailwind width-utility class as a second fallback.
+        '#flow_chat_sidebar',
+        '[class*="w-sidebar-width"]',
       ];
 
       for (const selector of removableSelectors) {
@@ -657,25 +662,25 @@ export async function getDoubaoPageState(page) {
 }
 export async function getDoubaoTurns(page) {
     await ensureDoubaoChatPage(page);
-    const turns = await page.evaluate(getTurnsScript());
+    const turns = unwrapEvaluateResult(await page.evaluate(getTurnsScript()));
     if (turns.length > 0)
         return turns;
-    const lines = await page.evaluate(getTranscriptLinesScript());
+    const lines = unwrapEvaluateResult(await page.evaluate(getTranscriptLinesScript()));
     return lines.map((line) => ({ Role: 'System', Text: line }));
 }
 export async function getDoubaoVisibleTurns(page) {
     await ensureDoubaoChatPage(page);
-    return await page.evaluate(getTurnsScript());
+    return unwrapEvaluateResult(await page.evaluate(getTurnsScript()));
 }
 export async function getDoubaoTranscriptLines(page) {
     await ensureDoubaoChatPage(page);
-    return await page.evaluate(getTranscriptLinesScript());
+    return unwrapEvaluateResult(await page.evaluate(getTranscriptLinesScript()));
 }
 export async function sendDoubaoMessage(page, text) {
     await ensureDoubaoChatPage(page);
     const normalizeComposerText = (value) => value.replace(/\r\n/g, '\n').trim();
     const expectedText = normalizeComposerText(text);
-    const prepared = await page.evaluate(prepareDoubaoComposerScript());
+    const prepared = unwrapEvaluateResult(await page.evaluate(prepareDoubaoComposerScript()));
     if (!prepared?.ok) {
         throw new CommandExecutionError(prepared?.reason || 'Could not find Doubao input element');
     }
@@ -685,20 +690,20 @@ export async function sendDoubaoMessage(page, text) {
             await page.nativeType(text);
             await page.wait(0.2);
             await page.evaluate(syncComposerAfterNativeTypeScript());
-            const nativeState = await page.evaluate(composerStateScript());
+            const nativeState = unwrapEvaluateResult(await page.evaluate(composerStateScript()));
             hasText = !!nativeState?.hasText && normalizeComposerText(nativeState?.text || '') === expectedText;
         }
         catch { }
     }
     if (!hasText) {
-        const fallbackState = await page.evaluate(fillComposerScript(text));
+        const fallbackState = unwrapEvaluateResult(await page.evaluate(fillComposerScript(text)));
         hasText = !!fallbackState?.hasText && normalizeComposerText(fallbackState?.text || '') === expectedText;
     }
     if (!hasText) {
         throw new CommandExecutionError('Failed to insert text into Doubao composer');
     }
     let submittedBy = 'enter';
-    const clicked = await page.evaluate(clickSendButtonScript());
+    const clicked = unwrapEvaluateResult(await page.evaluate(clickSendButtonScript()));
     if (clicked) {
         submittedBy = 'button';
     }
@@ -714,7 +719,7 @@ export async function sendDoubaoMessage(page, text) {
         await page.pressKey('Enter');
     }
     await page.wait(0.8);
-    const verification = await page.evaluate(detectDoubaoVerificationScript());
+    const verification = unwrapEvaluateResult(await page.evaluate(detectDoubaoVerificationScript()));
     if (verification?.detected) {
         throw new CommandExecutionError('Doubao blocked the request with a verification challenge', verification.reason
             ? `Detected challenge signal: ${verification.reason}`
@@ -735,7 +740,7 @@ export async function waitForDoubaoResponse(page, beforeLines, beforeTurns, prom
         .replace(/window\\._SSR_DATA.*$/g, '')
         .trim();
     const getCandidate = async () => {
-        const verification = await page.evaluate(detectDoubaoVerificationScript());
+        const verification = unwrapEvaluateResult(await page.evaluate(detectDoubaoVerificationScript()));
         if (verification?.detected) {
             throw new CommandExecutionError('Doubao blocked the request with a verification challenge', verification.reason
                 ? `Detected challenge signal: ${verification.reason}`
