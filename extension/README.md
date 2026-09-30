@@ -24,3 +24,43 @@ Suggested Chrome Web Store justification for `downloads`:
 > so agents can wait for downloads triggered during an automation workflow. The
 > command filters by a user-provided filename or URL pattern and timeout. We do
 > not modify, redirect, or persist user download history.
+
+## Form-fill Agent
+
+The popup's **Fill this page with DeepSeek Harness** button binds the current
+tab to a fresh `opencli browser` session and asks the daemon to open a Terminal
+window running a [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
+(`dsh`) agent for it. The workspace is created under `~/Downloads/opencli-agent-*`,
+and the task is in its `TASK.md`. Each reply you type runs one headless
+`dsh --json` turn, and later turns resume the same session. The agent only fills
+fields. You review and submit the form yourself.
+
+The agent looks up your details in your local files first (InfoGrep, then
+Spotlight) and uses web search only as a last resort for public facts. For the
+InfoGrep tools, create a dedicated dsh profile. Without it the agent runs on the
+stock `headless` profile, without InfoGrep.
+
+```sh
+dsh --profile opencli-form-fill --from-default-profile headless --help
+```
+
+Then add the InfoGrep MCP server to `~/.dsh/profiles/opencli-form-fill/cordis.patch.yml`:
+
+```yaml
+- insert:
+    - id: mcp-infogrep
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: infogrep
+        transport: stdio
+        command: /path/to/infogrep
+        args: [ 'mcp', '--dir', '/path/to/indexed/folder' ]
+        toolCallTimeoutMs: 900000
+
+# Optional: keep the full session log, which includes your personal details,
+# out of official DeepSeek API requests.
+- id: session-log-deepseek
+  name: '@deepseek-ai/dsh-session-log-deepseek'
+  config:
+    enabled: false
+```

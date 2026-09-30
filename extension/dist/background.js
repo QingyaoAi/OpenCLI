@@ -1437,7 +1437,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           notifyFormFillResult(false, "Failed to notify the OpenCLI daemon");
           return;
         }
-        notifyFormFillResult(true, "Claude Code agent launched in a new Terminal window.");
+        notifyFormFillResult(true, "Form-fill agent (DeepSeek Harness) launched in a new Terminal window.");
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.error(`[opencli] activateFormFill failed: ${message}`);
