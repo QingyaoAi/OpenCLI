@@ -69,7 +69,14 @@ cli({
         catch {
             await page.wait(2);
         }
-        const data = unwrapEvaluateResult(await page.evaluate(IMAGE_EXTRACT_SCRIPT));
+        let data = unwrapEvaluateResult(await page.evaluate(IMAGE_EXTRACT_SCRIPT));
+        // The tiles stream in before the inline script that carries the original
+        // URLs, so on a slow response the grid is visible while that script is
+        // still on its way. Give it a few seconds before calling it a layout change.
+        for (let i = 0; i < 12 && data && !data.blocked && data.tiles > 0 && Array.isArray(data.items) && data.items.length === 0; i++) {
+            await page.wait(1);
+            data = unwrapEvaluateResult(await page.evaluate(IMAGE_EXTRACT_SCRIPT));
+        }
         if (data?.blocked === 'captcha') {
             throw new CliError('CAPTCHA_REQUIRED', 'Google blocked the request', 'Open https://www.google.com/search?q=test&udm=2 in your browser, solve the CAPTCHA, then try again');
         }
