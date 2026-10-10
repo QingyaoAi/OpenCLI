@@ -14953,6 +14953,155 @@
   },
   {
     "site": "google",
+    "name": "image-download",
+    "description": "Download images from direct URLs (the image_url column of `google images`)",
+    "access": "read",
+    "strategy": "public",
+    "browser": false,
+    "args": [
+      {
+        "name": "url",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Image URL(s) from `google images` image_url; separate several with commas or spaces"
+      },
+      {
+        "name": "output",
+        "type": "str",
+        "default": "./google-images",
+        "required": false,
+        "help": "Output directory"
+      },
+      {
+        "name": "referer",
+        "type": "str",
+        "required": false,
+        "help": "Referer header (default: the image host origin; pass the result page_url if the host blocks hotlinking)"
+      }
+    ],
+    "columns": [
+      "index",
+      "status",
+      "file",
+      "bytes",
+      "format",
+      "url",
+      "error"
+    ],
+    "type": "js",
+    "modulePath": "google/image-download.js",
+    "sourceFile": "google/image-download.js"
+  },
+  {
+    "site": "google",
+    "name": "images",
+    "description": "Search Google Images (original image URLs, sizes, sources; optional local thumbnails)",
+    "access": "read",
+    "domain": "google.com",
+    "strategy": "public",
+    "browser": true,
+    "args": [
+      {
+        "name": "keyword",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "Search query"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "Number of results (1-100)"
+      },
+      {
+        "name": "lang",
+        "type": "str",
+        "default": "en",
+        "required": false,
+        "help": "Language short code (e.g. en, zh)"
+      },
+      {
+        "name": "size",
+        "type": "str",
+        "required": false,
+        "help": "Image size: large, medium or icon",
+        "choices": [
+          "large",
+          "medium",
+          "icon"
+        ]
+      },
+      {
+        "name": "type",
+        "type": "str",
+        "required": false,
+        "help": "Image type: clipart, lineart or animated (GIF)",
+        "choices": [
+          "clipart",
+          "lineart",
+          "animated"
+        ]
+      },
+      {
+        "name": "color",
+        "type": "str",
+        "required": false,
+        "help": "Color filter: color, bw, transparent, or a swatch such as red / blue",
+        "choices": [
+          "color",
+          "bw",
+          "transparent",
+          "red",
+          "orange",
+          "yellow",
+          "green",
+          "teal",
+          "blue",
+          "purple",
+          "pink",
+          "white",
+          "gray",
+          "black",
+          "brown"
+        ]
+      },
+      {
+        "name": "license",
+        "type": "str",
+        "required": false,
+        "help": "Usage rights: creative-commons or commercial (commercial & other licenses)",
+        "choices": [
+          "creative-commons",
+          "commercial"
+        ]
+      },
+      {
+        "name": "preview",
+        "type": "str",
+        "required": false,
+        "help": "Directory to save thumbnails into, named by rank (01.jpg, 02.jpg, ...), so you can view them before choosing"
+      }
+    ],
+    "columns": [
+      "rank",
+      "title",
+      "width",
+      "height",
+      "file_size",
+      "domain",
+      "image_url",
+      "page_url",
+      "preview"
+    ],
+    "type": "js",
+    "modulePath": "google/images.js",
+    "sourceFile": "google/images.js"
+  },
+  {
+    "site": "google",
     "name": "news",
     "description": "Get Google News headlines",
     "access": "read",
