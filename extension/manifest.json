@@ -10,8 +10,7 @@
     "activeTab",
     "alarms",
     "storage",
-    "downloads",
-    "notifications"
+    "downloads"
   ],
   "host_permissions": [
     "<all_urls>"

@@ -922,69 +922,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     })();
     return true;
   }
-  if (msg?.type === 'activateFormFill') {
-    // Fire-and-forget: the popup can close at any time (losing focus, the
-    // user clicking away) and Chrome then closes the message port out from
-    // under a still-pending sendResponse ("message port closed before a
-    // response was received"). Acknowledge immediately with a fast
-    // connectivity check, then run the real bind + notify-daemon flow
-    // detached from the popup's lifetime, reporting the outcome via a
-    // system notification instead of the (possibly long-gone) message port.
-    console.log(`[opencli] activateFormFill received (daemon socket active: ${isDaemonSocketActive(ws)})`);
-    if (!isDaemonSocketActive(ws)) {
-      sendResponse({ ok: false, error: 'Not connected to the OpenCLI daemon' });
-      return false;
-    }
-    sendResponse({ ok: true, pending: true });
-    console.log('[opencli] activateFormFill acknowledged, starting bind');
-    void (async () => {
-      try {
-        const session = `formfill-${crypto.randomUUID().slice(0, 8)}`;
-        const leaseKey = getLeaseKey(session, 'browser');
-        const bindResult = await handleBind(
-          { id: `popup-bind-${Date.now()}`, action: 'bind', session, surface: 'browser' },
-          leaseKey,
-        );
-        console.log(`[opencli] activateFormFill bind result: ok=${bindResult.ok} error=${bindResult.error ?? ''}`);
-        if (!bindResult.ok) {
-          notifyFormFillResult(false, bindResult.error || 'Could not bind the current tab');
-          return;
-        }
-        const url = (bindResult.data as { url?: string } | undefined)?.url ?? '';
-        const contextId = await getCurrentContextId();
-        const sent = safeSend(ws, { type: 'launch-agent', session, url, contextId });
-        console.log(`[opencli] activateFormFill launch-agent sent: ${sent} (session=${session})`);
-        if (!sent) {
-          notifyFormFillResult(false, 'Failed to notify the OpenCLI daemon');
-          return;
-        }
-        notifyFormFillResult(true, 'Form-fill agent (DeepSeek Harness) launched in a new Terminal window.');
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        console.error(`[opencli] activateFormFill failed: ${message}`);
-        notifyFormFillResult(false, message);
-      }
-    })();
-    // Response was already sent synchronously above; keeping the port open
-    // (return true) is harmless and defends against Chrome builds that
-    // mishandle sync sendResponse + false in module service workers.
-    return true;
-  }
   return false;
 });
-
-function notifyFormFillResult(success: boolean, message: string): void {
-  try {
-    chrome.notifications.create({
-      type: 'basic',
-      iconUrl: 'icons/icon-128.png',
-      title: success ? 'OpenCLI: agent launched' : 'OpenCLI: could not start agent',
-      message,
-    });
-  } catch (err) {
-    console.error(`[opencli] Failed to show form-fill notification: ${err instanceof Error ? err.message : String(err)}`);
-  }
-}
 
 /**
  * Best-effort fetch of the daemon's reported version for the popup status panel.

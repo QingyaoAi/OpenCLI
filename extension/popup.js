@@ -9,7 +9,6 @@ chrome.runtime.sendMessage({ type: 'getStatus' }, (resp) => {
   const copyBtn = document.getElementById('copyBtn');
   const hint = document.getElementById('hint');
   const extVersion = document.getElementById('extVersion');
-  const fillBtn = document.getElementById('fillBtn');
 
   if (resp && typeof resp.extensionVersion === 'string') {
     extVersion.textContent = `v${resp.extensionVersion}`;
@@ -21,7 +20,6 @@ chrome.runtime.sendMessage({ type: 'getStatus' }, (resp) => {
     daemonVersion.textContent = '';
     profileRow.style.display = 'none';
     hint.style.display = 'block';
-    fillBtn.disabled = true;
     return;
   }
 
@@ -40,48 +38,17 @@ chrome.runtime.sendMessage({ type: 'getStatus' }, (resp) => {
       daemonVersion.textContent = `daemon v${resp.daemonVersion}`;
     }
     hint.style.display = 'none';
-    fillBtn.disabled = false;
   } else if (resp.reconnecting) {
     setState(card, dot, 'connecting');
     status.textContent = 'Reconnecting...';
     daemonVersion.textContent = '';
     hint.style.display = 'none';
-    fillBtn.disabled = true;
   } else {
     setState(card, dot, 'disconnected');
     status.textContent = 'No daemon connected';
     daemonVersion.textContent = '';
     hint.style.display = 'block';
-    fillBtn.disabled = true;
   }
-});
-
-document.getElementById('fillBtn').addEventListener('click', () => {
-  const fillBtn = document.getElementById('fillBtn');
-  const fillStatus = document.getElementById('fillStatus');
-  fillBtn.disabled = true;
-  fillStatus.className = 'fill-status';
-  fillStatus.textContent = 'Requesting…';
-
-  // This only confirms the request was accepted (daemon reachable, etc.) —
-  // the actual bind + Terminal launch happens in the background independent
-  // of whether this popup is still open, and reports via a notification.
-  chrome.runtime.sendMessage({ type: 'activateFormFill' }, (resp) => {
-    if (chrome.runtime.lastError) {
-      console.error('[opencli popup] sendMessage lastError:', chrome.runtime.lastError.message);
-    }
-    if (!resp || !resp.ok) {
-      fillStatus.className = 'fill-status error';
-      fillStatus.textContent = (chrome.runtime.lastError && chrome.runtime.lastError.message)
-        || (resp && resp.error)
-        || 'Failed to start agent';
-      fillBtn.disabled = false;
-      return;
-    }
-    fillStatus.className = 'fill-status success';
-    fillStatus.textContent = 'Requested — watch for a notification and a new Terminal window.';
-    setTimeout(() => { fillBtn.disabled = false; }, 3000);
-  });
 });
 
 function setState(card, dot, state) {
