@@ -14,13 +14,25 @@ describe('output TTY detection', () => {
     logSpy.mockRestore();
   });
 
-  it('outputs YAML in non-TTY when format is default table', () => {
+  it('rejects unsupported render formats even for empty output', () => {
+    expect(() => render(null, { fmt: 'bogus' })).toThrow('--format must be one of');
+    expect(logSpy).not.toHaveBeenCalled();
+  });
+
+  it.each([['yml', 'yaml'], ['markdown', 'md']])('preserves the %s alias', (alias, canonical) => {
+    render([{ value: 'hello' }], { fmt: alias });
+    const aliasOutput = logSpy.mock.calls.map((call: unknown[]) => call[0]);
+    logSpy.mockClear();
+    render([{ value: 'hello' }], { fmt: canonical });
+    expect(logSpy.mock.calls.map((call: unknown[]) => call[0])).toEqual(aliasOutput);
+  });
+
+  it('defaults to a JSON envelope in non-TTY', () => {
     Object.defineProperty(process.stdout, 'isTTY', { value: false, writable: true });
     // commanderAdapter always passes fmt:'table' as default — this must still trigger downgrade
-    render([{ name: 'alice', score: 10 }], { fmt: 'table', columns: ['name', 'score'] });
+    render([{ name: 'alice', score: 10 }], { columns: ['name', 'score'] });
     const out = logSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
-    expect(out).toContain('name: alice');
-    expect(out).toContain('score: 10');
+    expect(JSON.parse(out)).toEqual({ok:true,data:[{name:'alice',score:10}]});
   });
 
   it('outputs table in TTY when format is default table', () => {
@@ -32,9 +44,9 @@ describe('output TTY detection', () => {
 
   it('respects explicit -f json even in non-TTY', () => {
     Object.defineProperty(process.stdout, 'isTTY', { value: false, writable: true });
-    render([{ name: 'alice' }], { fmt: 'json' });
+    render([{ name: 'alice', note: 'line 1\nline 2' }], { fmt: 'json' });
     const out = logSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
-    expect(JSON.parse(out)).toEqual([{ name: 'alice' }]);
+    expect(JSON.parse(out)).toEqual({ok:true,data:[{ name: 'alice', note: 'line 1\nline 2' }]});
   });
 
   it('shows elapsed time when elapsed is 0', () => {
@@ -58,5 +70,30 @@ describe('output TTY detection', () => {
     const out = logSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
     expect(out).toBe('# Title\n\nBody');
     expect(out).not.toContain('| markdown |');
+  });
+
+  it('keeps markdown records on one physical row across embedded line breaks', () => {
+    render([
+      { id: 'mixed', cell: 'left|right\r\nmiddle\n\nlast\rtail' },
+      { id: 'null', cell: null },
+      { id: 'undefined', cell: undefined },
+    ], { fmt: 'md', columns: ['id', 'cell'] });
+
+    const lines = logSpy.mock.calls.map((c: unknown[]) => String(c[0]));
+    expect(lines).toEqual([
+      '| id | cell |',
+      '| --- | --- |',
+      '| mixed | left\\|right<br>middle<br><br>last<br>tail |',
+      '| null |  |',
+      '| undefined |  |',
+    ]);
+    expect(lines.every((line: string) => !/[\r\n]/.test(line))).toBe(true);
+  });
+
+  it('escapes pipe characters in markdown table cells', () => {
+    render([{ name: 'a|b', score: 10 }], { fmt: 'md', columns: ['name', 'score'] });
+    const out = logSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
+
+    expect(out).toContain('| a\\|b | 10 |');
   });
 });

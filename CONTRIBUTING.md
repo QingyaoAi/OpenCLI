@@ -40,6 +40,7 @@ cli({
   description: 'Trending posts on MySite',
   domain: 'www.mysite.com',
   strategy: Strategy.PUBLIC,
+  access: 'read',
   browser: false,
   args: [
     { name: 'query', positional: true, required: true, help: 'Search keyword' },
@@ -60,6 +61,12 @@ cli({
 ```
 
 See [`hackernews/top.js`](clis/hackernews/top.js) for a real example.
+
+The `fetch` step also supports JSON request bodies and explicit per-item batches.
+Use `method: 'POST'` with `body` for GraphQL or JSON APIs; nested body fields can
+reference `${{ args.query }}`, `${{ data }}`, or `${{ item.id }}` in a batch.
+See [Pipeline JSON requests](./docs/developer/ts-adapter.md#pipeline-json-requests)
+for complete examples, concurrency behavior, and validation rules.
 
 ### func() Adapter (For complex browser interactions)
 
@@ -84,14 +91,12 @@ cli({
     const { query, limit = 10 } = kwargs;
     await page.goto('https://www.mysite.com');
 
-    const data = await page.evaluate(`
-      (async () => {
-        const res = await fetch('/api/search?q=${encodeURIComponent(query)}', {
-          credentials: 'include'
-        });
-        return (await res.json()).results;
-      })()
-    `);
+    const data = await page.evaluate(async (q: string) => {
+      const res = await fetch('/api/search?q=' + encodeURIComponent(q), {
+        credentials: 'include'
+      });
+      return (await res.json()).results;
+    }, query);
 
     return data.slice(0, Number(limit)).map((item: any) => ({
       title: item.title,

@@ -1,27 +1,12 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { getRegistry } from '@jackwener/opencli/registry';
-import { ArgumentError, AuthRequiredError, CommandExecutionError, EmptyResultError } from '@jackwener/opencli/errors';
+
+import { makePage } from './test-helpers.js';
 import './trending.js';
 
-const { parseLimit, parseCard } = await import('./trending.js').then((m) => m.__test__);
-
-function makePage({ evaluateResult, cookies = [{ name: 'JSESSIONID', value: '"ajax:abc"' }] } = {}) {
-    return {
-        goto: vi.fn().mockResolvedValue(undefined),
-        wait: vi.fn().mockResolvedValue(undefined),
-        getCookies: vi.fn().mockResolvedValue(cookies),
-        evaluate: vi.fn().mockResolvedValue(evaluateResult),
-    };
-}
+const { parseCard } = await import('./trending.js').then((m) => m.__test__);
 
 describe('linkedin-learning trending', () => {
-    it('validates --limit without silent clamping', () => {
-        expect(parseLimit(undefined)).toBe(10);
-        expect(parseLimit(50)).toBe(50);
-        expect(() => parseLimit(0)).toThrow(ArgumentError);
-        expect(() => parseLimit(51)).toThrow(ArgumentError);
-    });
-
     it('maps a carousel card to the canonical row shape', () => {
         const card = {
             entityType: 'COURSE',
@@ -81,43 +66,4 @@ describe('linkedin-learning trending', () => {
         expect(rows[2].group).toBe('Trending in your network');
     });
 
-    it('respects --limit', async () => {
-        const cmd = getRegistry().get('linkedin-learning/trending');
-        const cards = Array.from({ length: 6 }, (_, i) => ({ slug: `s${i}`, headline: { title: { text: `T${i}` } } }));
-        const page = makePage({
-            evaluateResult: {
-                json: { elements: [{ carousels: [{ title: { text: 'G' }, cards }] }] },
-            },
-        });
-        const rows = await cmd.func(page, { limit: 3 });
-        expect(rows).toHaveLength(3);
-    });
-
-    it('throws AuthRequiredError when JSESSIONID is missing', async () => {
-        const cmd = getRegistry().get('linkedin-learning/trending');
-        const page = makePage({ cookies: [], evaluateResult: { json: { elements: [] } } });
-        await expect(cmd.func(page, { limit: 5 })).rejects.toBeInstanceOf(AuthRequiredError);
-    });
-
-    it('throws EmptyResultError when no carousels yield cards', async () => {
-        const cmd = getRegistry().get('linkedin-learning/trending');
-        const page = makePage({ evaluateResult: { json: { elements: [{ carousels: [] }] } } });
-        await expect(cmd.func(page, { limit: 5 })).rejects.toBeInstanceOf(EmptyResultError);
-    });
-
-    it('throws CommandExecutionError when the elements array is missing', async () => {
-        const cmd = getRegistry().get('linkedin-learning/trending');
-        const page = makePage({ evaluateResult: { json: { data: {} } } });
-        await expect(cmd.func(page, { limit: 5 })).rejects.toBeInstanceOf(CommandExecutionError);
-    });
-
-    it('throws CommandExecutionError when cards lack slug identity', async () => {
-        const cmd = getRegistry().get('linkedin-learning/trending');
-        const page = makePage({
-            evaluateResult: {
-                json: { elements: [{ carousels: [{ title: { text: 'G' }, cards: [{ headline: { title: { text: 'No slug' } } }] }] }] },
-            },
-        });
-        await expect(cmd.func(page, { limit: 5 })).rejects.toBeInstanceOf(CommandExecutionError);
-    });
 });

@@ -1,6 +1,29 @@
 import { describe, expect, it } from 'vitest';
 import { ArgumentError, CommandExecutionError, EmptyResultError } from '@jackwener/opencli/errors';
-import { parsePageArg, resolveBvid, resolveUid, selectVideoPart } from './utils.js';
+import { httpsUrl, parseBvidOrVideoUrl, parseCountText, parseDurationText, parsePageArg, resolveBvid, resolveUid, selectVideoPart } from './utils.js';
+
+describe('parseBvidOrVideoUrl', () => {
+    it('preserves exact case-sensitive BVID identity from ids and trusted URLs', () => {
+        expect(parseBvidOrVideoUrl(' BV1xx411c7mD ')).toBe('BV1xx411c7mD');
+        expect(parseBvidOrVideoUrl('https://www.bilibili.com/video/BV1Je9EBnEha/?p=2')).toBe('BV1Je9EBnEha');
+    });
+
+    it('rejects lowercase prefixes, wrong lengths, and untrusted URL lookalikes', () => {
+        for (const value of [
+            'bv1xx411c7mD',
+            'BV123abc',
+            'https://evil.example/video/BV1xx411c7mD',
+            'https://bilibili.com.evil.example/video/BV1xx411c7mD',
+            'https://account.bilibili.com/video/BV1xx411c7mD',
+            'http://www.bilibili.com/video/BV1xx411c7mD',
+            'https://user@www.bilibili.com/video/BV1xx411c7mD',
+            'https://www.bilibili.com/video/BV1xx411c7mD/extra',
+        ]) {
+            expect(() => parseBvidOrVideoUrl(value)).toThrow(ArgumentError);
+        }
+    });
+});
+
 describe('resolveBvid', () => {
     it('passes through a valid BV ID', async () => {
         expect(await resolveBvid('BV1MV9NBtENN')).toBe('BV1MV9NBtENN');
@@ -93,5 +116,47 @@ describe('selectVideoPart', () => {
         expect(() => selectVideoPart({ pages: [{ page: 1, cid: 1 }, { page: 1, cid: 2 }] }, 1)).toThrow(CommandExecutionError);
         expect(() => selectVideoPart({ pages: [{ page: '1e0', cid: 1 }] }, 1)).toThrow(CommandExecutionError);
         expect(() => selectVideoPart({ pages: [{ page: 1, cid: 0 }] }, 1)).toThrow(CommandExecutionError);
+    });
+});
+
+describe('parseDurationText', () => {
+    it('parses mm:ss and hh:mm:ss display strings into seconds', () => {
+        expect(parseDurationText('07:14')).toBe(434);
+        expect(parseDurationText('7:14')).toBe(434);
+        expect(parseDurationText('24:34')).toBe(1474);
+        expect(parseDurationText('1:02:03')).toBe(3723);
+    });
+
+    it('passes through numbers and returns 0 for anything unparseable', () => {
+        expect(parseDurationText(434)).toBe(434);
+        expect(parseDurationText('')).toBe(0);
+        expect(parseDurationText(undefined)).toBe(0);
+        expect(parseDurationText('直播中')).toBe(0);
+        expect(parseDurationText('12')).toBe(0);
+    });
+});
+
+describe('parseCountText', () => {
+    it('parses 万 / 亿 display text into numbers', () => {
+        expect(parseCountText('1.2万')).toBe(12000);
+        expect(parseCountText('3.4亿')).toBe(340000000);
+        expect(parseCountText('1234')).toBe(1234);
+        expect(parseCountText('1,234')).toBe(1234);
+    });
+
+    it('passes through numbers and returns 0 for anything unparseable', () => {
+        expect(parseCountText(2483267)).toBe(2483267);
+        expect(parseCountText('')).toBe(0);
+        expect(parseCountText(undefined)).toBe(0);
+        expect(parseCountText('--')).toBe(0);
+    });
+});
+
+describe('httpsUrl', () => {
+    it('upgrades http and protocol-relative image URLs', () => {
+        expect(httpsUrl('http://i0.hdslb.com/a.jpg')).toBe('https://i0.hdslb.com/a.jpg');
+        expect(httpsUrl('//i0.hdslb.com/a.jpg')).toBe('https://i0.hdslb.com/a.jpg');
+        expect(httpsUrl('https://i0.hdslb.com/a.jpg')).toBe('https://i0.hdslb.com/a.jpg');
+        expect(httpsUrl(undefined)).toBe('');
     });
 });

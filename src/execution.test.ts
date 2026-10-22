@@ -1,9 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { CliCommand } from './registry.js';
-import { executeCommand, prepareCommandArgs } from './execution.js';
+import { coerceAndValidateArgs, executeCommand, prepareCommandArgs } from './execution.js';
 import { ArgumentError, TimeoutError, toEnvelope } from './errors.js';
 import { cli, Strategy } from './registry.js';
 import { withTimeoutMs } from './runtime.js';
@@ -11,6 +11,29 @@ import * as runtime from './runtime.js';
 import * as capRouting from './capabilityRouting.js';
 import * as daemonClient from './browser/daemon-client.js';
 import { BrowserCommandError } from './browser/daemon-client.js';
+import { clearAllHooks, onBeforeExecute } from './hooks.js';
+
+afterEach(() => {
+  clearAllHooks();
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
+});
+
+describe('coerceAndValidateArgs', () => {
+  it('rejects fractional values for integer arguments', () => {
+    const args = [{ name: 'limit', type: 'int' as const, help: 'Result limit' }];
+
+    expect(() => coerceAndValidateArgs(args, { limit: '1.5' })).toThrow(ArgumentError);
+  });
+
+  it('rejects non-finite values for numeric arguments', () => {
+    const integerArgs = [{ name: 'limit', type: 'int' as const, help: 'Result limit' }];
+    const numberArgs = [{ name: 'threshold', type: 'number' as const, help: 'Threshold' }];
+
+    expect(() => coerceAndValidateArgs(integerArgs, { limit: 'Infinity' })).toThrow(ArgumentError);
+    expect(() => coerceAndValidateArgs(numberArgs, { threshold: '-Infinity' })).toThrow(ArgumentError);
+  });
+});
 
 describe('executeCommand — non-browser timeout', () => {
   it('applies the user --timeout arg as the ceiling for non-browser commands', async () => {
@@ -235,10 +258,16 @@ describe('executeCommand — non-browser timeout', () => {
     vi.restoreAllMocks();
   });
 
-  it('lets user --site-session ephemeral override adapter persistent metadata', async () => {
+  it.each([
+    { label: 'lets ephemeral env override persistent metadata', env: 'ephemeral', metadata: 'persistent', explicit: undefined, expected: 'ephemeral' },
+    { label: 'lets persistent env override ephemeral metadata', env: 'persistent', metadata: 'ephemeral', explicit: undefined, expected: 'persistent' },
+    { label: 'lets ephemeral flag override persistent env', env: 'persistent', metadata: 'persistent', explicit: 'ephemeral', expected: 'ephemeral' },
+    { label: 'lets persistent flag override ephemeral env', env: 'ephemeral', metadata: 'ephemeral', explicit: 'persistent', expected: 'persistent' },
+    { label: 'does not parse a shadowed invalid env', env: '', metadata: 'ephemeral', explicit: 'persistent', expected: 'persistent' },
+  ] as const)('$label', async ({ env, metadata, explicit, expected }) => {
     const closeWindow = vi.fn().mockResolvedValue(undefined);
     const mockPage = { closeWindow } as any;
-    const sessionOpts: Array<{ session?: string; idleTimeout?: number }> = [];
+    const sessionOpts: Array<{ session?: string; siteSession?: string }> = [];
 
     vi.spyOn(capRouting, 'shouldUseBrowserSession').mockReturnValue(true);
     vi.spyOn(runtime, 'browserSession').mockImplementation(async (_Factory, fn, opts) => {
@@ -246,26 +275,66 @@ describe('executeCommand — non-browser timeout', () => {
       return fn(mockPage);
     });
 
-    try {
-      const cmd = cli({
-        site: 'test-execution',
-        name: 'site-session-override-ephemeral', access: 'read',
-        description: 'test user site-session override',
-        browser: true,
-        strategy: Strategy.PUBLIC,
-        siteSession: 'persistent',
-        func: async () => [{ ok: true }],
-      });
+    vi.stubEnv('OPENCLI_SITE_SESSION', env);
+    const cmd = cli({
+      site: 'test-execution',
+      name: 'site-session-precedence', access: 'read',
+      description: 'test site-session precedence',
+      browser: true,
+      strategy: Strategy.PUBLIC,
+      siteSession: metadata,
+      func: async () => [{ ok: true }],
+    });
 
-      await executeCommand(cmd, {}, false, { siteSession: 'ephemeral' });
+    await executeCommand(cmd, {}, false, explicit === undefined ? {} : { siteSession: explicit });
 
-      expect(sessionOpts).toHaveLength(1);
+    expect(sessionOpts).toHaveLength(1);
+    expect(sessionOpts[0]?.siteSession).toBe(expected);
+    if (expected === 'persistent') {
+      expect(sessionOpts[0]?.session).toBe('site:test-execution');
+      expect(closeWindow).not.toHaveBeenCalled();
+    } else {
       expect(sessionOpts[0]?.session).toMatch(/^site:test-execution:/);
-      expect(sessionOpts[0]?.idleTimeout).toBeUndefined();
       expect(closeWindow).toHaveBeenCalledTimes(1);
-    } finally {
-      vi.restoreAllMocks();
     }
+  });
+
+  it.each(['', ' ', 'Persistent'])('rejects invalid OPENCLI_SITE_SESSION=%j before hooks or browser setup', async (env) => {
+    const beforeHook = vi.fn();
+    const adapter = vi.fn(async () => [{ ok: true }]);
+    onBeforeExecute(beforeHook);
+    vi.spyOn(capRouting, 'shouldUseBrowserSession').mockReturnValue(true);
+    const browserSessionSpy = vi.spyOn(runtime, 'browserSession');
+
+    vi.stubEnv('OPENCLI_SITE_SESSION', env);
+    const cmd = cli({
+      site: 'test-execution',
+      name: 'site-session-invalid-env', access: 'read',
+      description: 'test invalid site-session env fails before side effects',
+      browser: true,
+      strategy: Strategy.PUBLIC,
+      navigateBefore: 'https://example.com/',
+      func: adapter,
+    });
+
+    await expect(executeCommand(cmd, {})).rejects.toMatchObject({ code: 'ARGUMENT' });
+    expect(beforeHook).not.toHaveBeenCalled();
+    expect(browserSessionSpy).not.toHaveBeenCalled();
+    expect(adapter).not.toHaveBeenCalled();
+  });
+
+  it('does not apply OPENCLI_SITE_SESSION to non-browser commands', async () => {
+    vi.stubEnv('OPENCLI_SITE_SESSION', 'invalid');
+    const cmd = cli({
+      site: 'test-execution',
+      name: 'site-session-node-only', access: 'read',
+      description: 'test browser env does not poison node-only commands',
+      browser: false,
+      strategy: Strategy.PUBLIC,
+      func: async () => [{ ok: true }],
+    });
+
+    await expect(executeCommand(cmd, {})).resolves.toEqual([{ ok: true }]);
   });
 
   it('skips repeated domain pre-navigation for persistent site sessions', async () => {
@@ -415,7 +484,7 @@ describe('executeCommand — non-browser timeout', () => {
     vi.restoreAllMocks();
   });
 
-  it('calls closeWindow on browser command failure', async () => {
+  it('lets env ephemeral override persistent metadata and closes the window on failure', async () => {
     const closeWindow = vi.fn().mockResolvedValue(undefined);
     const mockPage = { closeWindow } as any;
 
@@ -430,16 +499,16 @@ describe('executeCommand — non-browser timeout', () => {
     const cmd = cli({
       site: 'test-execution',
       name: 'browser-close-on-error', access: 'read',
-      description: 'test closeWindow on failure',
+      description: 'test env ephemeral closeWindow on failure',
       browser: true,
       strategy: Strategy.PUBLIC,
+      siteSession: 'persistent',
       func: async () => { throw new Error('adapter failure'); },
     });
 
+    vi.stubEnv('OPENCLI_SITE_SESSION', 'ephemeral');
     await expect(executeCommand(cmd, {})).rejects.toThrow('adapter failure');
     expect(closeWindow).toHaveBeenCalledTimes(1);
-
-    vi.restoreAllMocks();
   });
 
   it('skips closeWindow when --keep-tab=true (success path)', async () => {
@@ -895,5 +964,245 @@ describe('executeCommand — persistent write lease release', () => {
     expect(releaseSpy).not.toHaveBeenCalled();
     expect(runCtxSpy).toHaveBeenLastCalledWith(null);
     vi.restoreAllMocks();
+  });
+});
+
+describe('executeCommand — site slot pool (OPENCLI_SITE_SLOTS)', () => {
+  function pooledCmd(access: 'read' | 'write', func: () => Promise<unknown> = async () => [{ ok: true }]): CliCommand {
+    return cli({
+      site: 'test-slots',
+      name: `slot-${access}`, access,
+      description: 'test site slot pool',
+      browser: true,
+      strategy: Strategy.PUBLIC,
+      func,
+    });
+  }
+
+  function stubBrowser() {
+    const sessionOpts: Array<{ session?: string; siteSession?: string }> = [];
+    const calls: string[] = [];
+    let listed: Array<{ page?: string; active?: boolean }> = [{ page: 'TARGET-1', active: false }];
+    const page = {
+      closeWindow: vi.fn().mockResolvedValue(undefined),
+      tabs: vi.fn(async () => { calls.push('tabs'); return listed; }),
+      selectTab: vi.fn(async (t: string) => { calls.push(`select:${t}`); }),
+    };
+    const setListed = (tabs: typeof listed) => { listed = tabs; };
+    vi.spyOn(capRouting, 'shouldUseBrowserSession').mockReturnValue(true);
+    vi.spyOn(runtime, 'browserSession').mockImplementation(async (_Factory, fn, opts) => {
+      sessionOpts.push(opts ?? {});
+      return fn(page as any);
+    });
+    const acquireSpy = vi.spyOn(daemonClient, 'acquireSiteSlot').mockResolvedValue({ session: 'site:test-slots#1', slot: 1, waitedMs: 0 });
+    const releaseSpy = vi.spyOn(daemonClient, 'releaseSiteSessionLease').mockResolvedValue(undefined);
+    const runCtxSpy = vi.spyOn(daemonClient, 'setDaemonRunContext');
+    return { sessionOpts, acquireSpy, releaseSpy, runCtxSpy, page, calls, setListed };
+  }
+
+  it('brings its own slot tab to the front by page identity before the adapter runs', async () => {
+    vi.stubEnv('OPENCLI_SITE_SLOTS', 'test-slots:1');
+    const { calls } = stubBrowser();
+
+    await executeCommand(pooledCmd('read', async () => { calls.push('adapter'); return []; }), {});
+
+    expect(calls).toEqual(['tabs', 'select:TARGET-1', 'adapter']);
+  });
+
+  it.each([
+    { label: 'already active', tabs: [{ page: 'TARGET-1', active: true }] },
+    { label: 'cold (no tab yet)', tabs: [] },
+    { label: 'a window-wide listing', tabs: [{ page: 'MINE', active: false }, { page: 'OTHER', active: true }] },
+  ])('does not select when the slot tab is $label', async ({ tabs }) => {
+    vi.stubEnv('OPENCLI_SITE_SLOTS', 'test-slots:1');
+    const { page, setListed } = stubBrowser();
+    setListed(tabs);
+
+    await executeCommand(pooledCmd('read'), {});
+
+    expect(page.selectTab).not.toHaveBeenCalled();
+  });
+
+  it('rejects pooled direct-CDP execution before acquiring a daemon slot', async () => {
+    vi.stubEnv('OPENCLI_SITE_SLOTS', 'test-slots:1');
+    vi.stubEnv('OPENCLI_CDP_ENDPOINT', 'http://127.0.0.1:9222');
+    const acquireSpy = vi.spyOn(daemonClient, 'acquireSiteSlot');
+    await expect(executeCommand(pooledCmd('read'), {})).rejects.toThrow('requires Browser Bridge');
+    expect(acquireSpy).not.toHaveBeenCalled();
+  });
+
+  it.each(['test-slots:1000000000', 'test-slots:1:2147483648', 'test-slots:1:0-' + '9'.repeat(400)])('rejects unbounded slot config %s before acquiring', config => {
+    vi.stubEnv('OPENCLI_SITE_SLOTS', config);
+    return expect(executeCommand(pooledCmd('read'), {})).rejects.toThrow('OPENCLI_SITE_SLOTS');
+  });
+
+  it('borrows a slot for a READ run, drives the granted persistent session, and returns the slot', async () => {
+    vi.stubEnv('OPENCLI_SITE_SLOTS', 'other:3,test-slots:2:1500-3000');
+    const { sessionOpts, acquireSpy, releaseSpy, runCtxSpy } = stubBrowser();
+
+    await executeCommand(pooledCmd('read'), {});
+
+    expect(acquireSpy).toHaveBeenCalledWith(expect.objectContaining({ site: 'test-slots', poolSize: 2, minIntervalMs: 1500, maxIntervalMs: 3000 }));
+    expect(sessionOpts[0]).toMatchObject({ session: 'site:test-slots#1', siteSession: 'persistent' });
+    const ctx = runCtxSpy.mock.calls[0]?.[0];
+    expect(ctx).toMatchObject({ command: 'test-slots/slot-read', access: 'read' });
+    expect(releaseSpy).toHaveBeenCalledWith({ runId: ctx!.runId, session: 'site:test-slots#1', surface: 'adapter' });
+    expect(runCtxSpy).toHaveBeenLastCalledWith(null);
+  });
+
+  it('uses one runId for both the write lease and the slot', async () => {
+    vi.stubEnv('OPENCLI_SITE_SLOTS', 'test-slots:1');
+    const { runCtxSpy, releaseSpy } = stubBrowser();
+
+    await executeCommand(pooledCmd('write'), {});
+
+    expect(runCtxSpy.mock.calls[0]?.[0]).toMatchObject({ access: 'write' });
+    expect(releaseSpy).toHaveBeenCalledTimes(1);
+    expect(releaseSpy.mock.calls[0]?.[0].runId).toBe(runCtxSpy.mock.calls[0]?.[0]?.runId);
+  });
+
+  it('returns the slot after an ordinary failure but leaves it to the TTL after an unknown outcome', async () => {
+    vi.stubEnv('OPENCLI_SITE_SLOTS', 'test-slots:1');
+    const { releaseSpy } = stubBrowser();
+
+    await expect(executeCommand(pooledCmd('read', async () => { throw new BrowserCommandError('boom', 'attach_failed'); }), {})).rejects.toThrow('boom');
+    expect(releaseSpy).toHaveBeenCalledTimes(1);
+
+    await expect(executeCommand(pooledCmd('read', async () => { throw new BrowserCommandError('unknown', 'command_result_unknown'); }), {})).rejects.toThrow('unknown');
+    expect(releaseSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears the run context and never opens the browser when no slot is granted', async () => {
+    vi.stubEnv('OPENCLI_SITE_SLOTS', 'test-slots:1');
+    const { sessionOpts, acquireSpy, releaseSpy, runCtxSpy } = stubBrowser();
+    acquireSpy.mockRejectedValue(new BrowserCommandError('No test-slots slot became free within 60s.', 'slot_wait_timeout'));
+
+    await expect(executeCommand(pooledCmd('read'), {})).rejects.toThrow('slot became free');
+
+    expect(sessionOpts).toHaveLength(0);
+    expect(releaseSpy).not.toHaveBeenCalled();
+    expect(runCtxSpy).toHaveBeenLastCalledWith(null);
+  });
+
+  it.each([
+    { label: 'unset', env: undefined },
+    { label: 'another site only', env: 'other:2' },
+    { label: 'a malformed entry for another site', env: 'other:x,test-slots-not:1' },
+  ])('leaves the command unpooled when the env is $label', async ({ env }) => {
+    if (env !== undefined) vi.stubEnv('OPENCLI_SITE_SLOTS', env);
+    else vi.stubEnv('OPENCLI_SITE_SLOTS', '');
+    const { sessionOpts, acquireSpy, page } = stubBrowser();
+
+    await executeCommand(pooledCmd('read'), {});
+
+    expect(acquireSpy).not.toHaveBeenCalled();
+    expect(page.selectTab).not.toHaveBeenCalled();
+    expect(sessionOpts[0]?.siteSession).toBe('ephemeral');
+    expect(sessionOpts[0]?.session).toMatch(/^site:test-slots:/);
+  });
+
+  it('lets an explicit --site-session ephemeral opt a single invocation out of the pool', async () => {
+    vi.stubEnv('OPENCLI_SITE_SLOTS', 'test-slots:1');
+    const { sessionOpts, acquireSpy } = stubBrowser();
+
+    await executeCommand(pooledCmd('read'), {}, false, { siteSession: 'ephemeral' });
+
+    expect(acquireSpy).not.toHaveBeenCalled();
+    expect(sessionOpts[0]).toMatchObject({ siteSession: 'ephemeral' });
+  });
+
+  it('pools even when OPENCLI_SITE_SESSION=ephemeral, since the pool is the more specific opt-in', async () => {
+    vi.stubEnv('OPENCLI_SITE_SLOTS', 'test-slots:1');
+    vi.stubEnv('OPENCLI_SITE_SESSION', 'ephemeral');
+    const { acquireSpy } = stubBrowser();
+
+    await executeCommand(pooledCmd('read'), {});
+
+    expect(acquireSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['test-slots:0', 'test-slots:two', 'test-slots:1:-5', 'test-slots:1:100-x', 'test-slots:', 'test-slots'])
+    ('rejects a malformed entry for this site (%s) instead of silently unpooling it', async (env) => {
+      vi.stubEnv('OPENCLI_SITE_SLOTS', env);
+      const { acquireSpy } = stubBrowser();
+
+      await expect(executeCommand(pooledCmd('read'), {})).rejects.toThrow(ArgumentError);
+      expect(acquireSpy).not.toHaveBeenCalled();
+    });
+
+  it('still validates OPENCLI_SITE_SESSION for a pooled site', async () => {
+    vi.stubEnv('OPENCLI_SITE_SLOTS', 'test-slots:1');
+    vi.stubEnv('OPENCLI_SITE_SESSION', 'sometimes');
+    stubBrowser();
+
+    await expect(executeCommand(pooledCmd('read'), {})).rejects.toThrow(ArgumentError);
+  });
+
+  it('keeps the slot bound through a CLI-layer timeout and returns it when the adapter settles', async () => {
+    vi.useFakeTimers();
+    vi.stubEnv('OPENCLI_SITE_SLOTS', 'test-slots:1');
+    const { releaseSpy, runCtxSpy } = stubBrowser();
+    const clearCtxSpy = vi.spyOn(daemonClient, 'clearDaemonRunContext');
+    try {
+      let finishAdapter!: () => void;
+      const adapterGate = new Promise<void>((resolve) => { finishAdapter = resolve; });
+      const rejection = expect(executeCommand(pooledCmd('read', async () => { await adapterGate; return []; }), {})).rejects.toThrow('timed out');
+      await vi.advanceTimersByTimeAsync(30 * 60 * 1000);
+      await rejection;
+
+      expect(releaseSpy).not.toHaveBeenCalled();
+      expect(runCtxSpy).not.toHaveBeenCalledWith(null);
+
+      finishAdapter();
+      await vi.advanceTimersByTimeAsync(0);
+
+      const runId = runCtxSpy.mock.calls[0][0]?.runId;
+      expect(clearCtxSpy).toHaveBeenCalledWith(runId);
+      expect(releaseSpy).toHaveBeenCalledWith({ runId, session: 'site:test-slots#1', surface: 'adapter' });
+    } finally {
+      vi.useRealTimers();
+      daemonClient.setDaemonRunContext(null);
+    }
+  });
+
+  it('bounds the queue wait by the user --timeout, else the 60s default', async () => {
+    vi.stubEnv('OPENCLI_SITE_SLOTS', 'test-slots:1');
+    const { acquireSpy } = stubBrowser();
+    const withTimeout = cli({
+      site: 'test-slots', name: 'slot-timeout', access: 'read', description: 'test', browser: true, strategy: Strategy.PUBLIC,
+      args: [{ name: 'timeout', type: 'int', required: false, default: 300, help: 'Max seconds' }],
+      func: async () => [],
+    });
+
+    await executeCommand(withTimeout, {});
+    await executeCommand(pooledCmd('read'), {});
+
+    expect(acquireSpy.mock.calls[0]?.[0]).toMatchObject({ waitMs: 300_000 });
+    expect(acquireSpy.mock.calls[1]?.[0]).toMatchObject({ waitMs: 60_000 });
+  });
+
+  it('charges the queue wait against the --timeout budget of the run', async () => {
+    vi.stubEnv('OPENCLI_SITE_SLOTS', 'test-slots:1');
+    const { acquireSpy } = stubBrowser();
+    acquireSpy.mockResolvedValue({ session: 'site:test-slots#0', slot: 0, waitedMs: 100_000 });
+    const runWithTimeoutSpy = vi.spyOn(runtime, 'runWithTimeout');
+    const withTimeout = cli({
+      site: 'test-slots', name: 'slot-budget', access: 'read', description: 'test', browser: true, strategy: Strategy.PUBLIC,
+      args: [{ name: 'timeout', type: 'int', required: false, default: 300, help: 'Max seconds' }],
+      func: async () => [],
+    });
+
+    await executeCommand(withTimeout, {});
+
+    expect(runWithTimeoutSpy.mock.calls[0]?.[1]).toMatchObject({ timeout: 200 + 30 });
+  });
+
+  it('treats a single interval value as a fixed spacing', async () => {
+    vi.stubEnv('OPENCLI_SITE_SLOTS', ' test-slots:1:2000 ');
+    const { acquireSpy } = stubBrowser();
+
+    await executeCommand(pooledCmd('read'), {});
+
+    expect(acquireSpy).toHaveBeenCalledWith(expect.objectContaining({ poolSize: 1, minIntervalMs: 2000, maxIntervalMs: 2000 }));
   });
 });

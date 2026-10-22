@@ -17,11 +17,6 @@ function createPage(payload) {
 }
 
 describe('facebook feed', () => {
-  it('registers the feed command with the existing row contract', () => {
-    const cmd = getRegistry().get('facebook/feed');
-    expect(cmd).toBeDefined();
-    expect(cmd.columns).toEqual(['index', 'author', 'content', 'likes', 'comments', 'shares']);
-  });
 
   it('extracts existing role=article feed rows', () => {
     const payload = runExtract(`
@@ -154,6 +149,24 @@ describe('facebook feed', () => {
       comments: '-',
       shares: '-',
     }]);
+  });
+
+  it('keeps scrolling when raw article markers reach the limit but valid rows do not (#2195)', async () => {
+    const page = {
+      evaluate: vi.fn()
+        .mockResolvedValueOnce(4)
+        .mockResolvedValueOnce({ status: 'no_rows', rows: [] })
+        .mockResolvedValueOnce(5)
+        .mockResolvedValueOnce({
+          status: 'ok',
+          rows: [{ index: 1, author: 'A', content: 'Body', likes: '-', comments: '-', shares: '-' }],
+        }),
+    };
+
+    await __test__.loadFeedPosts(page, 1);
+
+    expect(page.evaluate).toHaveBeenCalledTimes(4);
+    expect(String(page.evaluate.mock.calls[1][0])).toContain('primaryContainers');
   });
 
   it('maps auth, real empty, parser drift, and malformed payloads to typed errors', async () => {

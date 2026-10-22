@@ -3,6 +3,35 @@
  */
 import https from 'node:https';
 import { ArgumentError, AuthRequiredError, CommandExecutionError, EmptyResultError } from '@jackwener/opencli/errors';
+
+const EXACT_BVID_RE = /^BV[0-9A-Za-z]{10}$/;
+const VIDEO_HOSTS = new Set(['bilibili.com', 'www.bilibili.com', 'm.bilibili.com']);
+
+/**
+ * Parse one exact, case-sensitive BVID or a trusted bilibili.com video URL.
+ * Unlike the legacy short-link resolver, this is synchronous and never treats
+ * malformed input as a b23.tv network lookup.
+ */
+export function parseBvidOrVideoUrl(value) {
+    const raw = String(value ?? '').trim();
+    if (EXACT_BVID_RE.test(raw)) return raw;
+
+    let parsed;
+    try {
+        parsed = new URL(raw);
+    }
+    catch {
+        throw new ArgumentError('Expected an exact BVID or bilibili.com video URL, for example BV1xx411c7mD');
+    }
+    if (!VIDEO_HOSTS.has(parsed.hostname) || parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port) {
+        throw new ArgumentError('Expected a trusted HTTPS bilibili.com video URL without credentials or a custom port');
+    }
+    const match = parsed.pathname.match(/^\/video\/(BV[0-9A-Za-z]{10})\/?$/);
+    if (!match) {
+        throw new ArgumentError('Bilibili video URL did not contain an exact case-sensitive BVID');
+    }
+    return match[1];
+}
 /**
  * Resolve Bilibili short URL / short code to BV ID.
  * Supports: BV1MV9NBtENN, XYzsqGa, b23.tv/XYzsqGa, https://b23.tv/XYzsqGa
@@ -119,6 +148,44 @@ const MIXIN_KEY_ENC_TAB = [
 ];
 export function stripHtml(s) {
     return s.replace(/<[^>]+>/g, '').replace(/&[a-z]+;/gi, ' ').trim();
+}
+
+/**
+ * 列表类接口的时长是展示文本（"07:14" / "1:02:03" / "7:14"），转成秒。
+ * 无法解析（空串、"直播中" 之类）返回 0——这些接口本来就不保证每条都有时长，
+ * 调用方按 0 = 未知处理，比抛错更贴合列表语义。
+ */
+export function parseDurationText(value) {
+    if (typeof value === 'number' && Number.isFinite(value)) return Math.max(0, Math.trunc(value));
+    const text = String(value ?? '').trim();
+    if (!/^\d{1,3}(:\d{1,2}){1,2}$/.test(text)) return 0;
+    const parts = text.split(':').map(Number);
+    return parts.reduce((total, part) => total * 60 + part, 0);
+}
+
+/**
+ * 列表类接口的播放 / 弹幕数有两种形态：数字（search / user-videos）和展示文本
+ * （动态流的 "1.2万" / "3.4亿"）。统一转成数字，无法解析返回 0。
+ * 注意万 / 亿 是 B 站自己截断过的，1.2万 只能还原成 12000，不是精确值。
+ */
+export function parseCountText(value) {
+    if (typeof value === 'number' && Number.isFinite(value)) return Math.max(0, Math.trunc(value));
+    const text = String(value ?? '').trim().replace(/,/g, '');
+    const match = text.match(/^(\d+(?:\.\d+)?)\s*([万亿])?$/);
+    if (!match) return 0;
+    const scale = match[2] === '亿' ? 1e8 : match[2] === '万' ? 1e4 : 1;
+    return Math.round(Number(match[1]) * scale);
+}
+
+/**
+ * B 站的图片地址经常返回 http:// 或协议相对的 //i0.hdslb.com/…，统一升到 https。
+ */
+export function httpsUrl(value) {
+    const url = String(value ?? '').trim();
+    if (!url) return '';
+    if (url.startsWith('//')) return `https:${url}`;
+    if (url.startsWith('http://')) return `https://${url.slice('http://'.length)}`;
+    return url;
 }
 export function payloadData(payload) {
     return payload?.data ?? payload;

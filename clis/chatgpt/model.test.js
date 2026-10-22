@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('./utils.js', () => ({
     CHATGPT_DOMAIN: 'chatgpt.com',
-    CHATGPT_MODEL_CHOICES: ['fast', 'speed', 'instant', 'balanced', 'advanced', 'high', 'thinking', 'very-high', 'pro'],
+    CHATGPT_MODEL_CHOICES: ['fast', 'speed', 'instant', 'balanced', 'advanced', 'high', 'thinking', 'very-high', 'pro', 'gpt-5.6-pro'],
     navigateToProject: mocks.navigateToProject,
     selectChatGPTModel: mocks.selectChatGPTModel,
 }));
@@ -21,6 +21,7 @@ beforeEach(() => {
 });
 
 describe('chatgpt model project routing', () => {
+
     it('opens a project before selecting the requested model', async () => {
         const page = {};
 

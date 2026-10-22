@@ -9,6 +9,8 @@ commands.
 - `debugger`: sends CDP commands to OpenCLI-controlled or bound tabs.
 - `tabs`: manages the dedicated OpenCLI automation windows and reports selected
   tab metadata back to the CLI.
+- `tabGroups`: backs `opencli browser chrome call tabGroups.*` for organizing
+  your own tab groups. OpenCLI does not put its automation tabs in a group.
 - `cookies`: reads cookies for browser-backed adapters that need authenticated
   fetches.
 - `downloads`: surfaces download lifecycle to `opencli browser wait download`.

@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { createServer } from 'http';
 import { homedir } from 'os';
 import { join } from 'path';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { assertSpotifyCredentialsConfigured, getFirstSpotifyTrack, mapSpotifyTrackResults, parseDotEnv, resolveSpotifyCredentials, } from './utils.js';
 // ── Credentials ───────────────────────────────────────────────────────────────
 // Set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET as environment variables,
@@ -99,8 +99,13 @@ async function findTrackUri(query) {
     return track;
 }
 function openBrowser(url) {
-    const cmd = process.platform === 'win32' ? `start "" "${url}"` : process.platform === 'darwin' ? `open "${url}"` : `xdg-open "${url}"`;
-    exec(cmd);
+    if (process.platform === 'win32') {
+        execFile('cmd', ['/c', 'start', '', url]);
+    } else if (process.platform === 'darwin') {
+        execFile('open', [url]);
+    } else {
+        execFile('xdg-open', [url]);
+    }
 }
 // ── Commands ──────────────────────────────────────────────────────────────────
 cli({
@@ -162,8 +167,8 @@ cli({
             const timeout = setTimeout(() => { server.close(); reject(new CliError('AUTH_TIMEOUT', 'Authentication timed out after 5 minutes')); }, 5 * 60 * 1000);
             server.listen(8888, () => {
                 const authUrl = `https://accounts.spotify.com/authorize?${new URLSearchParams({ client_id: CLIENT_ID, response_type: 'code', redirect_uri: REDIRECT_URI, scope: SCOPES })}`;
-                console.log('Opening browser for Spotify login...');
-                console.log('If it does not open, visit:', authUrl);
+                console.error('Opening browser for Spotify login...');
+                console.error('If it does not open, visit:', authUrl);
                 openBrowser(authUrl);
             });
             server.on('close', () => clearTimeout(timeout));

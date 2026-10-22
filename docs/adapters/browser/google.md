@@ -6,18 +6,18 @@
 
 | Command | Description |
 |---------|-------------|
+| `opencli google news [keyword]` | Get Google News headlines (top stories or search) |
 | `opencli google search <keyword>` | Search Google and extract results from the page |
 | `opencli google images <keyword>` | Search Google Images: original image URLs, pixel size, file size, source page; optional local thumbnails |
 | `opencli google image-download <url...>` | Download images from the `image_url` values returned by `google images` |
 | `opencli google suggest <keyword>` | Get Google search suggestions |
-| `opencli google news [keyword]` | Get Google News headlines (top stories or search) |
 | `opencli google trends` | Get Google Trends daily trending searches |
 
 ## What works today
 
 - Public API commands work without a browser:
-  - `suggest` — JSON API, no auth needed
   - `news` — RSS feed, supports top stories and keyword search
+  - `suggest` — JSON API, no auth needed
   - `trends` — RSS feed, supports different regions
 - `google search` uses browser mode to extract results from google.com.
 - `google images` uses browser mode too. It reads the **original** image URL, width/height, file size, source domain and page URL from the results page, not just the gstatic thumbnail, so results can be filtered and downloaded without opening each one.
@@ -35,9 +35,6 @@
 ## Usage Examples
 
 ```bash
-# Search Google
-opencli google search "typescript tutorial" --limit 10
-
 # Search images, with filters
 opencli google images "golden retriever puppy" --limit 10 --size large -f json
 opencli google images "logo" --type clipart --color transparent --license creative-commons
@@ -48,26 +45,29 @@ opencli google images "golden retriever puppy" --limit 12 --preview ./previews -
 # Download chosen originals (several URLs: comma or space separated)
 opencli google image-download "https://example.com/a.jpg,https://example.com/b.webp" --output ./pics -f json
 
-# Get search suggestions
-opencli google suggest python
-
 # Get top news headlines
 opencli google news --limit 5
 
 # Search news for a topic
 opencli google news "artificial intelligence" --limit 10 --lang en --region US
 
-# Get trending searches in Japan
-opencli google trends --region JP --limit 10
+# Search Google
+opencli google search "typescript tutorial" --limit 10
+
+# Get search suggestions
+opencli google suggest python
 
 # Output as JSON
 opencli google search "machine learning" -f json
+
+# Get trending searches in Japan
+opencli google trends --region JP --limit 10
 ```
 
 ## Prerequisites
 
 - `suggest`, `news`, `trends` do not require Chrome.
-- `search` requires:
+- `search` and `images` require:
   - Chrome running (or Standalone mode will auto-launch)
   - For best results, use the [Browser Bridge extension](/guide/browser-bridge) with an established Google session
 

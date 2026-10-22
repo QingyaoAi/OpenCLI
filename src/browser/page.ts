@@ -15,8 +15,9 @@ import { buildEvaluateExpression } from './utils.js';
 import { saveBase64ToFile } from '../utils.js';
 import { generateStealthJs } from './stealth.js';
 import { waitForDomStableJs } from './dom-helpers.js';
-import { BasePage } from './base-page.js';
+import { CDPBasePage, NativeInputVisibilityError } from './base-page.js';
 import { classifyBrowserError } from './errors.js';
+import { CommandExecutionError } from '../errors.js';
 import { log } from '../logger.js';
 
 function isUnsupportedNetworkCaptureError(err: unknown): boolean {
@@ -39,7 +40,7 @@ function isStalePageIdentityError(err: unknown): boolean {
 /**
  * Page — implements IPage by talking to the daemon via HTTP.
  */
-export class Page extends BasePage {
+export class Page extends CDPBasePage {
   private readonly _idleTimeout: number | undefined;
 
   constructor(
@@ -184,23 +185,41 @@ export class Page extends BasePage {
     }
   }
 
+  /** Non-idempotent writes must not use evaluate's navigation retry. */
+  async evaluateOnce<T = unknown>(js: string): Promise<T> {
+    return await sendCommand('exec', { code: buildEvaluateExpression(js, []), ...this._cmdOpts() }) as T;
+  }
+
   async getCookies(opts: { domain?: string; url?: string } = {}): Promise<BrowserCookie[]> {
     const result = await sendCommand('cookies', { ...this._sessionOpts(), ...opts });
-    return Array.isArray(result) ? result : [];
+    if (!Array.isArray(result) || result.some(cookie => !cookie || typeof cookie.name !== 'string' || typeof cookie.value !== 'string')) {
+      throw new CommandExecutionError('Browser Bridge returned an invalid cookies response');
+    }
+    return result;
   }
 
   /** Release the current browser session lease in the extension */
   async closeWindow(): Promise<void> {
+    const closeOwnedTab = process.env.OPENCLI_CLOSE_OWNED_TAB === '1';
     try {
-      await sendCommand('close-window', { ...this._sessionOpts() });
-    } catch {
+      const result = await sendCommand(closeOwnedTab ? 'close-owned-tab' : 'close-window', {
+        ...this._sessionOpts(),
+      });
+      const cleanup = result && typeof result === 'object' && 'tabCleanup' in result ? result.tabCleanup : undefined;
+      if (closeOwnedTab && cleanup !== 'closed-owned-tab' && cleanup !== 'no-owned-tab') {
+        throw new CommandExecutionError('Browser Bridge did not acknowledge owned-tab cleanup; update the extension.');
+      }
+    } catch (err) {
+      if (closeOwnedTab) {
+        log.warn(`Owned-tab cleanup failed (session=${this.session}, surface=${this.surface}): ${err instanceof Error ? err.message : String(err)}. Retry cleanup separately or close the remaining tab manually; do not repeat the site action.`);
+        throw err;
+      }
       // Window may already be closed or daemon may be down
-    } finally {
-      this._page = undefined;
-      this._lastUrl = null;
-      this._networkCaptureUnsupported = false;
-      this._networkCaptureWarned = false;
     }
+    this._page = undefined;
+    this._lastUrl = null;
+    this._networkCaptureUnsupported = false;
+    this._networkCaptureWarned = false;
   }
 
   async tabs(): Promise<unknown[]> {
@@ -278,10 +297,11 @@ export class Page extends BasePage {
     }
   }
 
-  async readNetworkCapture(): Promise<unknown[]> {
+  async readNetworkCapture(options: { retainIncomplete?: boolean } = {}): Promise<unknown[]> {
     if (this._networkCaptureUnsupported) return [];
     try {
       const result = await sendCommand('network-capture-read', {
+        ...options,
         ...this._cmdOpts(),
       });
       return Array.isArray(result) ? result : [];
@@ -345,25 +365,9 @@ export class Page extends BasePage {
     });
   }
 
-  async handleJavaScriptDialog(accept: boolean, promptText?: string): Promise<void> {
-    await this.cdp('Page.handleJavaScriptDialog', {
-      accept,
-      ...(promptText !== undefined && { promptText }),
-    });
-  }
-
-  /** CDP native click fallback — called when JS el.click() fails */
-  protected override async tryNativeClick(x: number, y: number): Promise<boolean> {
-    try {
-      await this.nativeClick(x, y);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
   /** Precise click using DOM.getContentQuads/getBoxModel for inline elements */
   async clickWithQuads(ref: string): Promise<void> {
+    await this.assertNativeInputVisible();
     const safeRef = JSON.stringify(ref);
     const cssSelector = `[data-opencli-ref="${ref.replace(/"/g, '\\"')}"]`;
 
@@ -398,7 +402,10 @@ export class Page extends BasePage {
           await this.nativeClick(Math.round(cx), Math.round(cy));
           return;
         }
-      } catch { /* fallthrough */ }
+      } catch (error) {
+        if (error instanceof NativeInputVisibilityError) throw error;
+        // Fall through for unsupported geometry lookup.
+      }
 
       // Try getBoxModel
       try {
@@ -410,8 +417,14 @@ export class Page extends BasePage {
           await this.nativeClick(Math.round(cx), Math.round(cy));
           return;
         }
-      } catch { /* fallthrough */ }
-    } catch { /* fallthrough */ }
+      } catch (error) {
+        if (error instanceof NativeInputVisibilityError) throw error;
+        // Fall through for unsupported geometry lookup.
+      }
+    } catch (error) {
+      if (error instanceof NativeInputVisibilityError) throw error;
+      // Fall through for unsupported DOM lookup.
+    }
 
     // Final fallback: regular click
     await this.evaluate(`
@@ -424,48 +437,4 @@ export class Page extends BasePage {
     `);
   }
 
-  async nativeClick(x: number, y: number): Promise<void> {
-    await this.cdp('Input.dispatchMouseEvent', {
-      type: 'mouseMoved',
-      x,
-      y,
-    });
-    await this.cdp('Input.dispatchMouseEvent', {
-      type: 'mousePressed',
-      x, y,
-      button: 'left',
-      clickCount: 1,
-    });
-    await this.cdp('Input.dispatchMouseEvent', {
-      type: 'mouseReleased',
-      x, y,
-      button: 'left',
-      clickCount: 1,
-    });
-  }
-
-  async nativeType(text: string): Promise<void> {
-    // Use Input.insertText for reliable Unicode/CJK text insertion
-    await this.cdp('Input.insertText', { text });
-  }
-
-  async nativeKeyPress(key: string, modifiers: string[] = []): Promise<void> {
-    let modifierFlags = 0;
-    for (const mod of modifiers) {
-      if (mod === 'Alt') modifierFlags |= 1;
-      if (mod === 'Ctrl' || mod === 'Control') modifierFlags |= 2;
-      if (mod === 'Meta') modifierFlags |= 4;
-      if (mod === 'Shift') modifierFlags |= 8;
-    }
-    await this.cdp('Input.dispatchKeyEvent', {
-      type: 'keyDown',
-      key,
-      modifiers: modifierFlags,
-    });
-    await this.cdp('Input.dispatchKeyEvent', {
-      type: 'keyUp',
-      key,
-      modifiers: modifierFlags,
-    });
-  }
 }

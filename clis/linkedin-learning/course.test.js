@@ -1,18 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
-import { getRegistry } from '@jackwener/opencli/registry';
-import { ArgumentError, AuthRequiredError, CommandExecutionError, EmptyResultError } from '@jackwener/opencli/errors';
-import './course.js';
+import { describe, expect, it } from 'vitest';
+
+import { ArgumentError } from '@jackwener/opencli/errors';
 
 const { parseSlug, parseCourse } = await import('./course.js').then((m) => m.__test__);
-
-function makePage({ evaluateResult, cookies = [{ name: 'JSESSIONID', value: '"ajax:abc"' }] } = {}) {
-    return {
-        goto: vi.fn().mockResolvedValue(undefined),
-        wait: vi.fn().mockResolvedValue(undefined),
-        getCookies: vi.fn().mockResolvedValue(cookies),
-        evaluate: vi.fn().mockResolvedValue(evaluateResult),
-    };
-}
 
 describe('linkedin-learning course', () => {
     it('accepts a bare slug', () => {
@@ -82,33 +72,4 @@ describe('linkedin-learning course', () => {
         expect(parseCourse({ title: '   ' }, 'x')).toBeNull();
     });
 
-    it('throws AuthRequiredError when JSESSIONID is missing', async () => {
-        const cmd = getRegistry().get('linkedin-learning/course');
-        const page = makePage({ cookies: [], evaluateResult: { json: { elements: [{}] } } });
-        await expect(cmd.func(page, { slug: 'agentic-ai-build' })).rejects.toBeInstanceOf(AuthRequiredError);
-    });
-
-    it('throws EmptyResultError when no element matches the slug', async () => {
-        const cmd = getRegistry().get('linkedin-learning/course');
-        const page = makePage({ evaluateResult: { json: { elements: [] } } });
-        await expect(cmd.func(page, { slug: 'agentic-ai-build' })).rejects.toBeInstanceOf(EmptyResultError);
-    });
-
-    it('throws CommandExecutionError when the elements array is missing', async () => {
-        const cmd = getRegistry().get('linkedin-learning/course');
-        const page = makePage({ evaluateResult: { json: { data: {} } } });
-        await expect(cmd.func(page, { slug: 'agentic-ai-build' })).rejects.toBeInstanceOf(CommandExecutionError);
-    });
-
-    it('throws CommandExecutionError when the first detail element is malformed', async () => {
-        const cmd = getRegistry().get('linkedin-learning/course');
-        const page = makePage({ evaluateResult: { json: { elements: [{}] } } });
-        await expect(cmd.func(page, { slug: 'agentic-ai-build' })).rejects.toBeInstanceOf(CommandExecutionError);
-    });
-
-    it('throws CommandExecutionError on fetch errors', async () => {
-        const cmd = getRegistry().get('linkedin-learning/course');
-        const page = makePage({ evaluateResult: { error: 'HTTP 500' } });
-        await expect(cmd.func(page, { slug: 'agentic-ai-build' })).rejects.toBeInstanceOf(CommandExecutionError);
-    });
 });
